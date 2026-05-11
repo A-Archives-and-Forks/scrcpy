@@ -68,7 +68,7 @@ The server is a Java application (with a [`public static void main(String...
 args)`][main] method), compiled against the Android framework, and executed as
 `shell` on the Android device.
 
-[main]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/Server.java#L193
+[main]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/Server.java#L212
 
 To run such a Java application, the classes must be [_dexed_][dex] (typically,
 to `classes.dex`). If `my.package.MainClass` is the main class, compiled to
@@ -128,8 +128,8 @@ It is followed by any number of arguments, in the form of `key=value` pairs.
 Their order is irrelevant. The possible keys and associated value types can be
 found in the [server][server-options] and [client][client-options] code.
 
-[server-options]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/Options.java#L181
-[client-options]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/app/src/server.c#L226
+[server-options]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/Options.java#L339
+[client-options]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/app/src/server.c#L265
 
 For example, if we execute `scrcpy -m1920 --no-audio`, then the server
 execution will look like this:
@@ -158,16 +158,18 @@ the other "components":
 
 ### Screen video encoding
 
-The encoding is managed by [`ScreenEncoder`].
+The screen capture is managed by [`ScreenCapture`] and the encoding is performed
+by [`SurfaceEncoder`].
 
 The video is encoded using the [`MediaCodec`] API. The codec encodes the content
 of a `Surface` associated to the display, and writes the encoding packets to the
 client (on the _video_ socket).
 
-[`ScreenEncoder`]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java
+[`ScreenCapture`]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/video/ScreenCapture.java
+[`SurfaceEncoder`]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/video/SurfaceEncoder.java
 [`MediaCodec`]: https://developer.android.com/reference/android/media/MediaCodec.html
 
-On device rotation (or folding), the encoding session is [reset] and restarted.
+On device rotation (or folding), the encoding session is reset and restarted.
 
 New frames are produced only when changes occur on the surface. This avoids to
 send unnecessary frames, but by default there might be drawbacks:
@@ -178,9 +180,7 @@ send unnecessary frames, but by default there might be drawbacks:
 Both problems are [solved][repeat] by the flag
 [`KEY_REPEAT_PREVIOUS_FRAME_AFTER`][repeat-flag].
 
-[reset]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java#L179
-[rotation]: https://github.com/Genymobile/scrcpy/blob/ffe0417228fb78ab45b7ee4e202fc06fc8875bf3/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java#L90
-[repeat]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/ScreenEncoder.java#L246-L247
+[repeat]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/video/SurfaceEncoder.java#L313-L314
 [repeat-flag]: https://developer.android.com/reference/android/media/MediaFormat.html#KEY_REPEAT_PREVIOUS_FRAME_AFTER
 
 
@@ -191,8 +191,8 @@ the [`MediaCodec`] asynchronous API.
 
 More details are available on the [blog post][scrcpy2] introducing the audio feature.
 
-[captured]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/AudioCapture.java
-[encoded]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/AudioEncoder.java
+[captured]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/audio/AudioDirectCapture.java
+[encoded]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/audio/AudioEncoder.java
 [`AudioRecord`]: https://developer.android.com/reference/android/media/AudioRecord
 
 
@@ -207,14 +207,12 @@ separate thread). There are several types of input events:
  - other commands (e.g. to switch the screen on or to copy the clipboard).
 
 Some of them need to inject input events to the system. To do so, they use the
-_hidden_ method [`InputManager.injectInputEvent()`] (exposed by the
-[`InputManager` wrapper][inject-wrapper]).
+_hidden_ method [`InputManager.injectInputEvent()`].
 
-[`Controller`]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/Controller.java
+[`Controller`]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/control/Controller.java
 [`KeyEvent`]: https://developer.android.com/reference/android/view/KeyEvent.html
 [`MotionEvent`]: https://developer.android.com/reference/android/view/MotionEvent.html
-[`InputManager.injectInputEvent()`]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/wrappers/InputManager.java#L34
-[inject-wrapper]: https://github.com/Genymobile/scrcpy/blob/ffe0417228fb78ab45b7ee4e202fc06fc8875bf3/server/src/main/java/com/genymobile/scrcpy/wrappers/InputManager.java#L27
+[`InputManager.injectInputEvent()`]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/wrappers/InputManager.java#L48
 
 
 
@@ -236,9 +234,9 @@ paths][run]:
  - scrcpy in "normal" mode ([`scrcpy.c`])
  - scrcpy in [OTG mode](otg.md) ([`scrcpy_otg.c`])
 
-[run]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/app/src/main.c#L81-L82
-[`scrcpy.c`]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/app/src/scrcpy.c#L292-L293
-[`scrcpy_otg.c`]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/app/src/usb/scrcpy_otg.c#L51-L52
+[run]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/app/src/main.c#L93
+[`scrcpy.c`]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/app/src/scrcpy.c#L305-L306
+[`scrcpy_otg.c`]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/app/src/usb/scrcpy_otg.c#L61-L62
 
 In the remaining of this document, we assume that the "normal" mode is used
 (read the code for the OTG mode).
@@ -339,14 +337,14 @@ Still on this _first_ socket, the device sends some [metadata][device meta] to
 the client (currently only the device name, used as the window title, but there
 might be other fields in the future).
 
-[dummy byte]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/DesktopConnection.java#L93
-[device meta]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/DesktopConnection.java#L151
+[dummy byte]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/device/DesktopConnection.java#L70
+[device meta]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/device/DesktopConnection.java#L155
 
 You can read the [client][client-connection] and [server][server-connection]
 code for more details.
 
-[client-connection]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/app/src/server.c#L465-L466
-[server-connection]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/DesktopConnection.java#L63
+[client-connection]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/app/src/server.c#L604-L605
+[server-connection]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/device/DesktopConnection.java#L56
 
 Then each socket is used for its intended purpose.
 
@@ -426,7 +424,7 @@ The most significant bits of the PTS are used for packet flags:
 _Session packets_ and _media packets_ are distinguished by their first bit (the
 MSB).
 
-[frame header]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/Streamer.java#L83
+[frame header]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/device/Streamer.java#L107
 
 
 ### Controls
@@ -434,8 +432,10 @@ MSB).
 Controls messages are sent via a custom binary protocol.
 
 The only documentation for this protocol is the set of unit tests on both sides:
- - `ControlMessage` (from client to device): [serialization](https://github.com/Genymobile/scrcpy/blob/master/app/tests/test_control_msg_serialize.c) | [deserialization](https://github.com/Genymobile/scrcpy/blob/master/server/src/test/java/com/genymobile/scrcpy/ControlMessageReaderTest.java)
- - `DeviceMessage` (from device to client) [serialization](https://github.com/Genymobile/scrcpy/blob/master/server/src/test/java/com/genymobile/scrcpy/DeviceMessageWriterTest.java) | [deserialization](https://github.com/Genymobile/scrcpy/blob/master/app/tests/test_device_msg_deserialize.c)
+ - `ControlMessage` (from client to device): [serialization](https://github.com/Genymobile/scrcpy/blob/master/app/tests/test_control_msg_serialize.c)
+   | [deserialization](https://github.com/Genymobile/scrcpy/blob/master/server/src/test/java/com/genymobile/scrcpy/control/ControlMessageReaderTest.java)
+ - `DeviceMessage` (from device to client) [serialization](https://github.com/Genymobile/scrcpy/blob/master/server/src/test/java/com/genymobile/scrcpy/control/DeviceMessageWriterTest.java)
+   | [deserialization](https://github.com/Genymobile/scrcpy/blob/master/app/tests/test_device_msg_deserialize.c)
 
 
 ## Standalone server
@@ -452,7 +452,7 @@ streams easily:
  - `send_stream_meta`: disable codec and video size metadata
  - `raw_stream`: disable all the above
 
-[server-specific options]: https://github.com/Genymobile/scrcpy/blob/a3cdf1a6b86ea22786e1f7d09b9c202feabc6949/server/src/main/java/com/genymobile/scrcpy/Options.java#L309-L329
+[server-specific options]: https://github.com/Genymobile/scrcpy/blob/19057b48afb9d5388bd143c6f885008f48055552/server/src/main/java/com/genymobile/scrcpy/Options.java#L542-L562
 
 Concretely, here is how to expose a raw H.264 stream on a TCP socket:
 
